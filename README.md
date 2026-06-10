@@ -1,92 +1,131 @@
-# BLE Central Node
+# Central Node — BLE Energy Monitor
 
-Python host application for the DA14706 BLE Energy Monitor sensor node.  
-Connects over Bluetooth LE, receives live power/environmental measurements, and controls the relay.
+Python-based Central Node for the DA14706 wireless energy monitor thesis project.
+Connects to the MCU over Bluetooth Low Energy, receives sensor measurements at 1 Hz,
+controls a relay, and logs data to disk.
+
+---
 
 ## Requirements
 
-- Python 3.9+
-- [bleak](https://github.com/hbldh/bleak) BLE library
+Python 3.8 or higher.
 
-```
+Install the only dependency:
+
+```bash
 pip install bleak
 ```
 
-## Configuration
+---
 
-Open `central_node.py` and update the two constants at the top if needed:
+## Hardware
 
-| Constant | Default | Description |
-|---|---|---|
-| `ADDRESS` | `48:23:35:F4:00:07` | BLE MAC address of the sensor node |
-| `RECONNECT_DELAY` | `5` | Seconds to wait before a reconnect attempt |
+| Device | Role |
+|---|---|
+| Renesas DA14706 (DA1470x Dev Kit) | BLE peripheral — sensor node |
+| LEM HLSR 10P | AC current sensor (ADC CH0) |
+| BEL DPC12 transformer | AC voltage sensor (ADC CH1) |
+| I²C temp/humidity sensor | MikroBUS 1 |
+| Soldered 333024 relay | MikroBUS 2 GPIO |
+| Windows laptop | Central Node (this script) |
 
-The sensor node advertises as **BLE_Relay_Ctrl**. To find its MAC address, scan with nRF Connect or run a bleak scan:
+**MCU BLE address:** `48:23:35:F4:00:07`
 
-```python
-import asyncio
-from bleak import BleakScanner
-asyncio.run(BleakScanner.discover())
-```
+---
 
-## Usage
+## BLE Service
 
-```
+| Characteristic | UUID | Direction | Size | Purpose |
+|---|---|---|---|---|
+| Relay | `11111111-0000-0000-0000-111111111111` | R/W/Notify | 1 byte | Relay control + state |
+| Measurements | `22222222-0000-0000-0000-222222222222` | Notify | 15 bytes | Sensor data @ 1 Hz |
+
+### Measurement Packet Layout
+
+Packed struct, little-endian, 15 bytes total:
+
+| Field | Type | Scale | Example | Physical value |
+|---|---|---|---|---|
+| v_rms | int16 | ÷100 | 23045 | 230.45 V |
+| i_rms | int16 | ÷1000 | 1500 | 1.500 A |
+| p_w | int32 | ÷100 | 12345 | 123.45 W |
+| freq | int16 | ÷100 | 5000 | 50.00 Hz |
+| temp | int16 | ÷100 | 2150 | 21.50 °C |
+| humid | uint16 | ÷100 | 6000 | 60.00 % |
+| relay_state | uint8 | — | 1 | ON |
+
+### Derived Quantities (computed on CN side)
+
+| Quantity | Formula |
+|---|---|
+| Apparent power S | V × I |
+| Reactive power Q | √(S² − P²) |
+| Power factor PF | P / S |
+
+---
+
+## Running
+
+```bash
 python central_node.py
 ```
 
-The script connects to the sensor node and starts printing one measurement line per second:
+The script connects automatically and reconnects if the MCU disconnects.
+Stop with **Ctrl+C**.
 
-```
-Vrms=238.07 V  Irms=4.383 A  P=1032.74 W  f=50.00 Hz  T=26.75 °C  H=39.00%  Relay=OFF
-```
+---
 
-Press **Ctrl+C** to exit.
+## Terminal Commands
 
-### Relay control
-
-While the script is running, type a command and press Enter:
+Type these in the terminal while the script is running and press Enter:
 
 | Command | Action |
 |---|---|
 | `on` | Turn relay ON |
 | `off` | Turn relay OFF |
 | `toggle` or `t` | Toggle relay state |
+| `log start` | Start logging measurements to file |
+| `log stop` | Stop logging |
 
-Commands typed while the device is temporarily disconnected are queued and sent on the next successful reconnect.
+---
 
-## Automatic reconnection
+## Log Files
 
-If the BLE connection drops, the script waits `RECONNECT_DELAY` seconds and reconnects automatically. Notification subscriptions are re-established on each new connection.
+Logging is **off by default**. Start it with `log start`.
 
-## Measurement packet format
+**Location:** `Desktop/sensor_node1/`
 
-The sensor node sends a 15-byte little-endian notification on the measurement characteristic once per second.
+**Filename format:** `sensor_node1-DD.MM.YY.txt` (e.g. `sensor_node1-10.06.26.txt`)
 
-| Field | Type | Unit | Example raw | Decoded |
-|---|---|---|---|---|
-| `v_rms` | int16 | centivolts | 23807 | 238.07 V |
-| `i_rms` | int16 | milliamps | 4383 | 4.383 A |
-| `p_w` | int32 | centiwatts | 103274 | 1032.74 W |
-| `freq` | int16 | centi-Hz | 5000 | 50.00 Hz (placeholder) |
-| `temp` | int16 | centi-°C | 2675 | 26.75 °C |
-| `humid` | uint16 | centi-%RH | 3900 | 39.00 % |
-| `relay_state` | uint8 | — | 0 / 1 | OFF / ON |
+A new file is created each day. If the file for today already exists, new rows
+are appended. Each session starts logging from where it left off.
 
-Struct format string: `"<hhihhHB"`
+**Format:** CSV with header row.
 
-## BLE service / characteristic UUIDs
+```
+timestamp,v_rms_V,i_rms_A,p_W,s_VA,q_VAr,pf,freq_Hz,temp_C,humid_pct,relay_state
+2026-06-10 20:15:01,230.45,1.500,310.20,345.68,156.32,0.897,50.00,21.50,60.00,OFF
+2026-06-10 20:15:02,230.48,1.501,310.35,345.89,156.18,0.897,50.00,21.51,60.00,OFF
+```
 
-| Role | UUID |
-|---|---|
-| Custom service | `00000000-1111-2222-2222-333333333333` |
-| Relay control (R/W/Notify) | `11111111-0000-0000-0000-111111111111` |
-| Measurements (Notify) | `22222222-0000-0000-0000-222222222222` |
+The CSV format can be opened directly in Excel or imported into Python with pandas.
 
-### Relay characteristic write values
+---
 
-| Value | Effect |
-|---|---|
-| `0x01` | ON |
-| `0x00` | OFF |
-| `0xFF` | TOGGLE |
+## Project Structure
+
+```
+Bluetooth_CentralNode/
+├── central_node.py   # Main script
+└── README.md         # This file
+```
+
+---
+
+## Planned Extensions
+
+- [ ] GUI with live plots (PyQt5 or Dear PyGui)
+- [ ] Start / Stop logging button in GUI
+- [ ] Live plot of Vrms and Irms over time
+- [ ] ZCD-based frequency measurement on MCU side (freq field currently placeholder 0)
+- [ ] Parametric configuration from CN (sampling frequency, window size)
