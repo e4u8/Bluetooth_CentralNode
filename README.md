@@ -4,14 +4,20 @@ Python-based Central Node for the DA14706 wireless energy monitor thesis project
 Connects to the MCU over Bluetooth Low Energy, receives sensor measurements at 1 Hz,
 controls a relay, and logs data to disk.
 
+Two interfaces are available: a GUI dashboard and a terminal-only script.
+
 ---
 
 ## Requirements
 
 Python 3.8 or higher.
 
-Install the only dependency:
+**GUI (recommended):**
+```bash
+pip install bleak PyQt5 matplotlib
+```
 
+**Terminal only:**
 ```bash
 pip install bleak
 ```
@@ -66,18 +72,32 @@ Packed struct, little-endian, 15 bytes total:
 
 ## Running
 
+### GUI dashboard (recommended)
+
+```bash
+python central_node_gui.py
+```
+
+Opens a dark dashboard window with:
+- Live numeric tiles for all measurements (Vrms, Irms, P, S, Q, PF, freq, temp, humidity)
+- Relay indicator (ON/OFF) with ON, OFF, and TOGGLE buttons
+- Start Logging / Stop Logging buttons
+- Show Plots button — opens a separate window with live Vrms, Irms, and P charts
+- Status bar showing connection state and logging state
+
+The script connects automatically and reconnects if the MCU disconnects.
+Close the window to exit.
+
+### Terminal only
+
 ```bash
 python central_node.py
 ```
 
-The script connects automatically and reconnects if the MCU disconnects.
+Prints measurements to the terminal once per second.
 Stop with **Ctrl+C**.
 
----
-
-## Terminal Commands
-
-Type these in the terminal while the script is running and press Enter:
+**Terminal commands** (type and press Enter):
 
 | Command | Action |
 |---|---|
@@ -91,7 +111,10 @@ Type these in the terminal while the script is running and press Enter:
 
 ## Log Files
 
-Logging is **off by default**. Start it with `log start`.
+Logging is **off by default.**
+
+- In the GUI: click **Start Logging**
+- In the terminal: type `log start`
 
 **Location:** `Desktop/sensor_node1/`
 
@@ -116,16 +139,15 @@ The CSV format can be opened directly in Excel or imported into Python with pand
 
 ```
 Bluetooth_CentralNode/
-├── central_node.py   # Main script
-└── README.md         # This file
+├── central_node.py       # Terminal-only script (no dependencies beyond bleak)
+├── central_node_gui.py   # GUI dashboard (requires PyQt5 + matplotlib)
+└── README.md             # This file
 ```
 
 ---
 
 ## Planned Extensions
 
-- [ ] GUI with live plots (PyQt5 or Dear PyGui)
-- [ ] Start / Stop logging button in GUI
-- [ ] Live plot of Vrms and Irms over time
+- [ ] Colour feedback on tiles when values go outside normal range
 - [ ] ZCD-based frequency measurement on MCU side (freq field currently placeholder 0)
 - [ ] Parametric configuration from CN (sampling frequency, window size)
