@@ -14,11 +14,11 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QTimer
 from PyQt5.QtGui import QFont, QColor
+import numpy as np
 import matplotlib
 matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from collections import deque
 
 # ── BLE Configuration ─────────────────────────────────────────────────────────
 ADDRESS    = "48:23:35:F4:00:07"
@@ -167,17 +167,15 @@ class BleWorker(QThread):
 
 # ── Plot window ───────────────────────────────────────────────────────────────
 class PlotWindow(QDialog):
-    MAX_POINTS = 120   # 2 minutes of 1 Hz data
+    CYCLES = 2    # full AC cycles to display
+    POINTS = 500  # samples per render
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Live Plots")
         self.resize(820, 560)
 
-        self._v = deque(maxlen=self.MAX_POINTS)
-        self._i = deque(maxlen=self.MAX_POINTS)
-        self._p = deque(maxlen=self.MAX_POINTS)
-        self._t = deque(maxlen=self.MAX_POINTS)   # x-axis (seconds ago)
+        self._state = {"v_rms": 0.0, "i_rms": 0.0, "p_w": 0.0, "freq": 50.0}
 
         self._fig = Figure(facecolor="#1e1e2e")
         self._canvas = FigureCanvas(self._fig)
@@ -186,13 +184,8 @@ class PlotWindow(QDialog):
         self._ax_p = self._fig.add_subplot(313)
         self._fig.tight_layout(pad=2.5)
 
-        for ax, label, color in [
-            (self._ax_v, "Vrms (V)",  "#89b4fa"),
-            (self._ax_i, "Irms (A)",  "#a6e3a1"),
-            (self._ax_p, "P (W)",     "#fab387"),
-        ]:
+        for ax in (self._ax_v, self._ax_i, self._ax_p):
             ax.set_facecolor("#181825")
-            ax.set_ylabel(label, color="white", fontsize=8)
             ax.tick_params(colors="white", labelsize=7)
             for spine in ax.spines.values():
                 spine.set_edgecolor("#45475a")
@@ -201,29 +194,27 @@ class PlotWindow(QDialog):
         layout.addWidget(self._canvas)
 
     def push(self, row: dict):
-        self._v.append(row["v_rms"])
-        self._i.append(row["i_rms"])
-        self._p.append(row["p_w"])
-        n = len(self._v)
-        self._t = list(range(n))
+        self._state.update({k: row[k] for k in ("v_rms", "i_rms", "p_w", "freq")})
+        freq = self._state["freq"] if self._state["freq"] > 1.0 else 50.0
 
-        for ax, data, color in [
-            (self._ax_v, self._v, "#89b4fa"),
-            (self._ax_i, self._i, "#a6e3a1"),
-            (self._ax_p, self._p, "#fab387"),
+        t = np.linspace(0, self.CYCLES / freq, self.POINTS)
+        t_ms = t * 1000  # x-axis in milliseconds
+
+        for ax, amplitude, ylabel, color in [
+            (self._ax_v, self._state["v_rms"] * np.sqrt(2), "V (V)", "#89b4fa"),
+            (self._ax_i, self._state["i_rms"] * np.sqrt(2), "I (A)", "#a6e3a1"),
+            (self._ax_p, self._state["p_w"]   * np.sqrt(2), "P (W)", "#fab387"),
         ]:
+            y = amplitude * np.sin(2 * np.pi * freq * t)
             ax.cla()
             ax.set_facecolor("#181825")
-            ax.plot(self._t, list(data), color=color, linewidth=1.2)
+            ax.plot(t_ms, y, color=color, linewidth=1.2)
+            ax.set_ylabel(ylabel, color="white", fontsize=8)
             ax.tick_params(colors="white", labelsize=7)
             for spine in ax.spines.values():
                 spine.set_edgecolor("#45475a")
 
-        labels = ["Vrms (V)", "Irms (A)", "P (W)"]
-        for ax, label in zip([self._ax_v, self._ax_i, self._ax_p], labels):
-            ax.set_ylabel(label, color="white", fontsize=8)
-
-        self._ax_p.set_xlabel("samples (1 Hz)", color="white", fontsize=8)
+        self._ax_p.set_xlabel(f"time (ms)  —  {freq:.1f} Hz", color="white", fontsize=8)
         self._fig.tight_layout(pad=2.0)
         self._canvas.draw()
 
