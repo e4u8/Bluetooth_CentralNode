@@ -1,36 +1,153 @@
-# Bluetooth Central Node
+# Central Node — BLE Energy Monitor
 
-A minimal Python BLE central node that connects to a **Renesas DA14706** peripheral and listens for notifications on a relay control characteristic.
+Python-based Central Node for the DA14706 wireless energy monitor thesis project.
+Connects to the MCU over Bluetooth Low Energy, receives sensor measurements at 1 Hz,
+controls a relay, and logs data to disk.
 
-This is the companion host-side project to [ble_relay_ctrl](../ble_relay_ctrl), which runs on the DA14706 and exposes the BLE relay service.
+Two interfaces are available: a GUI dashboard and a terminal-only script.
 
-## How it works
-
-The script connects to the DA14706 by its Bluetooth address, subscribes to a custom GATT characteristic, and prints raw notification bytes for 30 seconds before disconnecting.
-
-| Parameter | Value |
-|-----------|-------|
-| Target device address | `48:23:35:F4:00:07` |
-| Characteristic UUID | `11111111-0000-0000-0000-111111111111` |
-| Listen duration | 30 seconds |
+---
 
 ## Requirements
 
-- Python 3.7+
-- [Bleak](https://github.com/hbldh/bleak) — cross-platform BLE library
+Python 3.8 or higher.
 
+**GUI (recommended):**
+```bash
+pip install bleak PyQt5 matplotlib
+```
+
+**Terminal only:**
 ```bash
 pip install bleak
 ```
 
-## Usage
+---
+
+## Hardware
+
+| Device | Role |
+|---|---|
+| Renesas DA14706 (DA1470x Dev Kit) | BLE peripheral — sensor node |
+| LEM HLSR 10P | AC current sensor (ADC CH0) |
+| BEL DPC12 transformer | AC voltage sensor (ADC CH1) |
+| I²C temp/humidity sensor | MikroBUS 1 |
+| Soldered 333024 relay | MikroBUS 2 GPIO |
+| Windows laptop | Central Node (this script) |
+
+**MCU BLE address:** `48:23:35:F4:00:07`
+
+---
+
+## BLE Service
+
+| Characteristic | UUID | Direction | Size | Purpose |
+|---|---|---|---|---|
+| Relay | `11111111-0000-0000-0000-111111111111` | R/W/Notify | 1 byte | Relay control + state |
+| Measurements | `22222222-0000-0000-0000-222222222222` | Notify | 15 bytes | Sensor data @ 1 Hz |
+
+### Measurement Packet Layout
+
+Packed struct, little-endian, 15 bytes total:
+
+| Field | Type | Scale | Example | Physical value |
+|---|---|---|---|---|
+| v_rms | int16 | ÷100 | 23045 | 230.45 V |
+| i_rms | int16 | ÷1000 | 1500 | 1.500 A |
+| p_w | int32 | ÷100 | 12345 | 123.45 W |
+| freq | int16 | ÷100 | 5000 | 50.00 Hz |
+| temp | int16 | ÷100 | 2150 | 21.50 °C |
+| humid | uint16 | ÷100 | 6000 | 60.00 % |
+| relay_state | uint8 | — | 1 | ON |
+
+### Derived Quantities (computed on CN side)
+
+| Quantity | Formula |
+|---|---|
+| Apparent power S | V × I |
+| Reactive power Q | √(S² − P²) |
+| Power factor PF | P / S |
+
+---
+
+## Running
+
+### GUI dashboard (recommended)
+
+```bash
+python central_node_gui.py
+```
+
+Opens a dark dashboard window with:
+- Live numeric tiles for all measurements (Vrms, Irms, P, S, Q, PF, freq, temp, humidity)
+- Relay indicator (ON/OFF) with ON, OFF, and TOGGLE buttons
+- Start Logging / Stop Logging buttons
+- Show Plots button — opens a separate window with live Vrms, Irms, and P charts
+- Status bar showing connection state and logging state
+
+The script connects automatically and reconnects if the MCU disconnects.
+Close the window to exit.
+
+### Terminal only
 
 ```bash
 python central_node.py
 ```
 
-Update `ADDRESS` in [central_node.py](central_node.py) if your DA14706 has a different Bluetooth address.
+Prints measurements to the terminal once per second.
+Stop with **Ctrl+C**.
 
-## Related projects
+**Terminal commands** (type and press Enter):
 
-- **ble_relay_ctrl** — firmware running on the Renesas DA14706 that exposes the BLE relay control service this script subscribes to.
+| Command | Action |
+|---|---|
+| `on` | Turn relay ON |
+| `off` | Turn relay OFF |
+| `toggle` or `t` | Toggle relay state |
+| `log start` | Start logging measurements to file |
+| `log stop` | Stop logging |
+
+---
+
+## Log Files
+
+Logging is **off by default.**
+
+- In the GUI: click **Start Logging**
+- In the terminal: type `log start`
+
+**Location:** `Desktop/sensor_node1/`
+
+**Filename format:** `sensor_node1-DD.MM.YY.txt` (e.g. `sensor_node1-10.06.26.txt`)
+
+A new file is created each day. If the file for today already exists, new rows
+are appended. Each session starts logging from where it left off.
+
+**Format:** CSV with header row.
+
+```
+timestamp,v_rms_V,i_rms_A,p_W,s_VA,q_VAr,pf,freq_Hz,temp_C,humid_pct,relay_state
+2026-06-10 20:15:01,230.45,1.500,310.20,345.68,156.32,0.897,50.00,21.50,60.00,OFF
+2026-06-10 20:15:02,230.48,1.501,310.35,345.89,156.18,0.897,50.00,21.51,60.00,OFF
+```
+
+The CSV format can be opened directly in Excel or imported into Python with pandas.
+
+---
+
+## Project Structure
+
+```
+Bluetooth_CentralNode/
+├── central_node.py       # Terminal-only script (no dependencies beyond bleak)
+├── central_node_gui.py   # GUI dashboard (requires PyQt5 + matplotlib)
+└── README.md             # This file
+```
+
+---
+
+## Planned Extensions
+
+- [ ] Colour feedback on tiles when values go outside normal range
+- [ ] ZCD-based frequency measurement on MCU side (freq field currently placeholder 0)
+- [ ] Parametric configuration from CN (sampling frequency, window size)
