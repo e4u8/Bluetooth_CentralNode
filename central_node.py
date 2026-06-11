@@ -26,6 +26,9 @@ RELAY_UUID = "11111111-0000-0000-0000-111111111111"
 MEAS_UUID  = "22222222-0000-0000-0000-222222222222"
 RECONNECT_DELAY = 5
 
+NOISE_V_THRESHOLD = 0.55    # V  — max noise voltage with no load
+NOISE_I_THRESHOLD = 0.356   # A  — max noise current with no load
+
 MEAS_FMT = "<hhihhHB"
 MEAS_LEN = struct.calcsize(MEAS_FMT)   # 15
 
@@ -135,6 +138,10 @@ class BleWorker(QThread):
             freq  = freq_raw / 100.0
             temp  = temp_raw / 100.0
             humid = humid_raw / 100.0
+            if v_rms <= NOISE_V_THRESHOLD:
+                v_rms = p_w = 0.0
+            if i_rms <= NOISE_I_THRESHOLD:
+                i_rms = p_w = 0.0
             s_va, q_var, pf = compute_derived(v_rms, i_rms, p_w)
             self.measurement.emit({
                 "v_rms": v_rms, "i_rms": i_rms, "p_w": p_w,
