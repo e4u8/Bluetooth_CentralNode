@@ -4,22 +4,14 @@ Python-based Central Node for the DA14706 wireless energy monitor thesis project
 Connects to the MCU over Bluetooth Low Energy, receives sensor measurements at 1 Hz,
 controls a relay, and logs data to disk.
 
-Two interfaces are available: a GUI dashboard and a terminal-only script.
-
 ---
 
 ## Requirements
 
 Python 3.8 or higher.
 
-**GUI (recommended):**
 ```bash
-pip install bleak PyQt5 matplotlib
-```
-
-**Terminal only:**
-```bash
-pip install bleak
+pip install bleak PyQt5 matplotlib numpy
 ```
 
 ---
@@ -68,14 +60,23 @@ Packed struct, little-endian, 15 bytes total:
 | Reactive power Q | √(S² − P²) |
 | Power factor PF | P / S |
 
+### Noise Suppression
+
+Small ADC noise with no load is clamped to zero before any computation:
+
+| Signal | Threshold |
+|---|---|
+| Vrms | ≤ 0.55 V → set to 0 |
+| Irms | ≤ 0.356 A → set to 0 |
+
+When either is zeroed, active power P is also forced to zero.
+
 ---
 
 ## Running
 
-### GUI dashboard (recommended)
-
 ```bash
-python central_node_gui.py
+python central_node.py
 ```
 
 Opens a dark dashboard window with:
@@ -85,50 +86,27 @@ Opens a dark dashboard window with:
 - Show Plots button — opens a separate window with live Vrms, Irms, and P charts
 - Status bar showing connection state and logging state
 
-The script connects automatically and reconnects if the MCU disconnects.
+The script connects automatically on launch and reconnects after 5 s if the MCU disconnects.
 Close the window to exit.
-
-### Terminal only
-
-```bash
-python central_node.py
-```
-
-Prints measurements to the terminal once per second.
-Stop with **Ctrl+C**.
-
-**Terminal commands** (type and press Enter):
-
-| Command | Action |
-|---|---|
-| `on` | Turn relay ON |
-| `off` | Turn relay OFF |
-| `toggle` or `t` | Toggle relay state |
-| `log start` | Start logging measurements to file |
-| `log stop` | Stop logging |
 
 ---
 
 ## Log Files
 
-Logging is **off by default.**
-
-- In the GUI: click **Start Logging**
-- In the terminal: type `log start`
+Logging is **off by default.** Click **Start Logging** to begin.
 
 **Location:** `Desktop/sensor_node1/`
 
-**Filename format:** `sensor_node1-DD.MM.YY.txt` (e.g. `sensor_node1-10.06.26.txt`)
+**Filename format:** `sensor_node1-DD.MM.YY.txt` (e.g. `sensor_node1-23.06.26.txt`)
 
-A new file is created each day. If the file for today already exists, new rows
-are appended. Each session starts logging from where it left off.
+A new file is created each day. If the file for today already exists, new rows are appended.
 
 **Format:** CSV with header row.
 
 ```
 timestamp,v_rms_V,i_rms_A,p_W,s_VA,q_VAr,pf,freq_Hz,temp_C,humid_pct,relay_state
-2026-06-10 20:15:01,230.45,1.500,310.20,345.68,156.32,0.897,50.00,21.50,60.00,OFF
-2026-06-10 20:15:02,230.48,1.501,310.35,345.89,156.18,0.897,50.00,21.51,60.00,OFF
+2026-06-23 20:15:01,230.45,1.500,310.20,345.68,156.32,0.897,50.00,21.50,60.00,OFF
+2026-06-23 20:15:02,230.48,1.501,310.35,345.89,156.18,0.897,50.00,21.51,60.00,OFF
 ```
 
 The CSV format can be opened directly in Excel or imported into Python with pandas.
@@ -139,9 +117,8 @@ The CSV format can be opened directly in Excel or imported into Python with pand
 
 ```
 Bluetooth_CentralNode/
-├── central_node.py       # Terminal-only script (no dependencies beyond bleak)
-├── central_node_gui.py   # GUI dashboard (requires PyQt5 + matplotlib)
-└── README.md             # This file
+├── central_node.py   # GUI dashboard (BLE worker + live plots + logging)
+└── README.md         # This file
 ```
 
 ---
