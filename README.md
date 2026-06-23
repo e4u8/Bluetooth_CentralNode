@@ -126,5 +126,4 @@ Bluetooth_CentralNode/
 ## Planned Extensions
 
 - [ ] Colour feedback on tiles when values go outside normal range
-- [ ] ZCD-based frequency measurement on MCU side (freq field currently placeholder 0)
 - [ ] Parametric configuration from CN (sampling frequency, window size)
